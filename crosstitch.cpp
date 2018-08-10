@@ -321,7 +321,7 @@ int main(int argc, char* argv[]){
 
     //handling the input
     if(argc != 2){
-        cerr << "Usage: "<< argv[0]
+        cerr << "error! Usage: "<< argv[0]
             << "input.txt" <<endl;
         return 1;
     }
