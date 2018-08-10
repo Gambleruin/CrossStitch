@@ -1,297 +1,390 @@
-#include <algorithm>
-#include <fstream>
-#include <cmath>
-#include <iostream>
-#include <string>
-#include <vector>
+#include<tuple>
+#include<cmath>
+#include<queue>
+#include<stdio.h>
+#include<iostream>
+#include<vector>
+#include<algorithm>
+#include<string>
+#include<string.h>
 using namespace std;
 
-double get_time() {
-    unsigned long long a, d;
-    __asm__ volatile ("rdtsc" : "=a" (a), "=d" (d));
-    return (d << 32 | a) / 2500000.0;
+typedef long long LL;
+typedef vector<int> VI;
+
+#define REP(i,n) for(int i=0, i##_len=(n); i<i##_len; ++i)
+#define EACH(i,c) for(__typeof((c).begin()) i=(c).begin(),i##_end=(c).end();i!=i##_end;++i)
+
+#ifdef LOCAL
+#define eprintf(...) fprintf(stderr, __VA_ARGS__)
+#else
+#define NDEBUG
+#define eprintf(...) 0
+#endif
+#include<assert.h>
+
+template<class T> inline void amin(T &x, const T &y) { if (y<x) x=y; }
+template<class T> inline void amax(T &x, const T &y) { if (x<y) x=y; }
+template<class Iter> void rprintf(const char *fmt, Iter begin, Iter end) {
+    for (bool sp=0; begin!=end; ++begin) { if (sp) putchar(' '); else sp = true; printf(fmt, *begin); }
+    putchar('\n');
 }
+inline LL pow2(int i) { return 1LL<<i; };
 
-unsigned rando() {
-    static unsigned y = 2463534242;
-    return y ^= (y ^= (y ^= y << 13) >> 17) << 5;
-}
+const int dy[6] = { 0, 1, 0, 1, 0, 1 };
+const int dx[6] = { 0, 1, 1, 0, 0, 1 };
+const int adj_d[4][4] = {
+    { 2, 3, 1 },
+    { 2, 3, 0 },
+    { 0, 1, 3 },
+    { 0, 1, 2 }
+};
 
-int ID_TO_COLOR[10020];
-int id_to_index[20000];
-vector<int*> INDEX_NEAR_ID[20000];
-pair<int, int> XY[40080];
-double DISTANCE[202][202];
+const double INF = 1e60;
 
-#define D(i, j) DISTANCE[abs(XY[i].second - XY[j].second)][abs(XY[i].first - XY[j].first)]
+struct UnionFind {
+    int n, cc, *u;
+    UnionFind() : n(0), cc(0), u(NULL) {}
+    UnionFind(int n_) : n(n_), cc(n_) {
+    u = new int[n_];
+    memset(u, -1, sizeof (int) * n);
+    }
+    UnionFind(const UnionFind &y) : n(y.n), cc(y.cc) {
+    u = new int[y.n];
+    memcpy(u, y.u, sizeof (int) * n);
+    }
+    ~UnionFind() {
+    delete[] u; u = NULL;
+    n = cc = 0;
+    }
+    friend void swap(UnionFind &x, UnionFind &y) {
+    swap(x.n, y.n); swap(x.cc, y.cc); swap(x.u, y.u);
+    }
+    UnionFind& operator=(UnionFind y) { 
+    swap(*this, y);
+    return *this;
+    }
+    int root(int x) {
+    int y = x, t;
+    while (u[y] >= 0) y = u[y];
+    while (x != y) { t = u[x]; u[x] = y; x = t; }
+    return y;
+    }
+    bool link(int x, int y) {
+    x = root(x); y = root(y);
+    if (x == y) return false;
+    if (u[y] < u[x]) swap(x, y);
+    u[x] += u[y]; u[y] = x; cc--;
+    return true;
+    }
+    bool same(int x, int y) { return root(x) == root(y); }
+    int size(int x) { return -u[root(x)]; }
+    int count() { return cc; }
+};
 
-namespace DP {
+const int MAXN = 101;
+const int MAXNN = MAXN * MAXN;
 
-    vector<int>::const_iterator it;
-    double dp[20002][2][2];
-    int next[20002][2][2];
+vector<string> F;
+int N;
+int R[MAXNN], C[MAXNN];
+int stop;
 
-    double dfs(int i, int j, int k) {
-        double& ret = dp[i][j][k];
-        if (ret == 1e9) {
-            int id1 = it[i - j - 1] ^ k;
-            for (int l = 0; l < 2; ++l) {
-                int id2 = it[i] ^ l;
-                double s = D(id1, id2 ^ 1) + dfs(i + 1, 0, l);
-                if (ret > s) {
-                    ret = s;
-                    next[i][j][k] = l;
-                }
-            }
-            for (int l = 0; l < 4; ++l) {
-                int id2 = it[i + 1] ^ (l >> 1 & 1);
-                int id3 = it[i] ^ (l & 1);
-                double s = D(id1, id2 ^ 1) + D(id2, id3 ^ 1) + dfs(i + 2, 1, l & 1);
-                if (ret > s) {
-                    ret = s;
-                    next[i][j][k] = l + 2;
-                }
-            }
-        }
-        return ret;
+vector<string> ret;
+double cost[MAXNN];
+bool use[MAXNN];
+bool strong[MAXNN];
+int par[MAXNN];
+VI G[MAXNN];
+VI ord;
+
+int sq(int x) { return x * x; }
+double dist(int i, int j) { return sqrt(sq(R[i] - R[j]) + sq(C[i] - C[j])); }
+
+void findPosition(char color) {
+    stop = 0;
+    REP (r, N) REP (c, N) if (F[r][c] == color) {
+    R[stop] = r;
+    C[stop] = c;
+    stop++;
     }
 
-    double optimize(vector<int>& sol) {
-        for (int i = 1; i < (int)sol.size(); ++i)
-            dp[i][0][0] = dp[i][0][1] = dp[i][1][0] = dp[i][1][1] = 1e9;
-        int i = sol.size() - 1;
-        dp[i][0][0] = dp[i][0][1] = dp[i][1][0] = dp[i][1][1] = 0;
-        --i;
-        for (int j = 0; j < 2; ++j) {
-            for (int k = 0; k < 2; ++k) {
-                int id1 = sol[i - j - 1] ^ k;
-                for (int l = 0; l < 2; ++l) {
-                    int id2 = sol[i] ^ l;
-                    if (dp[i][j][k] > D(id1, id2 ^ 1)) {
-                        dp[i][j][k] = D(id1, id2 ^ 1);
-                        next[i][j][k] = l;
-                    }
-                }
-            }
+    if (stop == 0) return;
+
+    ret.push_back(string(1, color));
+}
+
+int deg[MAXNN];
+vector<pair<float, unsigned> > edges;
+
+void setOrdFromGraph() {
+    int v = 0, p;
+    REP (i, stop) if (deg[i] == 1) { v = i; break; }
+    p = v;
+    ord.clear();
+    ord.reserve(stop);
+    REP (i, stop) {
+    ord.push_back(v);
+    EACH (e, G[v]) if (*e != p) {
+        p = v;
+        v = *e;
+        break;
+    }
+    }
+}
+
+char dp_buf[1<<28]; // 256_000_000
+
+void refineOrd() {
+    bool update = false;
+    do {
+    update = false;
+    REP (i, stop-2) for (int j=i+2; j<stop-1; j++) {
+        if (dist(ord[i], ord[i+1]) + dist(ord[j], ord[j+1]) >
+            dist(ord[i], ord[j]) + dist(ord[j+1], ord[i+1])) {
+        reverse(ord.begin() + i + 1, ord.begin() + j + 1);
+        update = true;
         }
-        it = sol.begin();
-        dfs(1, 0, 0);
-        int l = next[1][0][0];
-        for (int i = 1; i < (int)sol.size() - 1; ) {
-            if (l < 2) {
-                sol[i] ^= l;
-                i += 1;
-                l = next[i][0][l];
-            } else {
-                l -= 2;
-                sol[i] ^= l & 1;
-                sol[i + 1] ^= l >> 1 & 1;
-                swap(sol[i], sol[i + 1]);
-                i += 2;
-                l = next[i][1][l & 1];
-            }
+    }
+    } while (update) ;
+}
+
+void buildPathDp() {
+    ord.clear();
+    if (stop == 0) return;
+    if (stop == 1) {
+    ord.push_back(0);
+    return;
+    }
+
+    REP (i, stop) G[i].clear();
+    UnionFind U(stop);
+    memset(deg, 0, sizeof (int) * stop);
+    REP (i, stop-1) {
+    if (R[i] == R[i+1] &&  abs(C[i] - C[i+1]) <= 2) {
+        U.link(i, i+1);
+        G[i].push_back(i+1);
+        G[i+1].push_back(i);
+        deg[i]++;
+        deg[i+1]++;
+    }
+    }
+
+    edges.clear();
+    REP (j, stop) if (deg[j] <= 1) REP (i, j) if (deg[i] <= 1) { 
+    if (!U.same(i, j))
+        edges.emplace_back(dist(i, j), i * stop + j);
+    }
+    sort(edges.begin(), edges.end());
+
+    const int DP_MAX = 16;
+    REP (i, edges.size()) {
+    if (U.count() <= DP_MAX)  break;
+
+    int a = edges[i].second / stop;
+    int b = edges[i].second % stop;
+    if (deg[a] < 2 && deg[b] < 2 && !U.same(a, b)) {
+        G[a].push_back(b);
+        G[b].push_back(a);
+        deg[a]++; deg[b]++;
+        U.link(a, b);
+    }
+    }
+    
+    int size = U.count();
+    if (size > 1) {
+    // 8 * (1<<18) * 18 * 2
+    double (*dp)[DP_MAX * 2] = (double (*)[DP_MAX*2]) dp_buf;
+    int (*pre)[DP_MAX * 2] = (int (*)[DP_MAX*2]) (dp_buf + (1<<27));
+    REP (s, pow2(size)) REP (i, DP_MAX*2) {
+        dp[s][i] = INF;
+    }
+    assert((void*)&dp[pow2(DP_MAX)-1][DP_MAX*2] < (void*)&pre[0][0]);
+
+    memset(pre, -1, sizeof (int) * pow2(size) * DP_MAX * 2);
+
+    int pos = 0;
+    static pair<int, int> name[DP_MAX * 2];
+    REP (i, stop) {
+        if (deg[i] == 0) {
+        name[pos++] = make_pair(i, i);
+        name[pos++] = make_pair(i, i);
+        } else if (deg[i] == 1) {
+        name[pos++] = make_pair(U.root(i), i);
         }
-        return dp[1][0][0];
+    }
+
+    assert(pos == size * 2);
+    sort(name, name+pos);
+//  REP (i, pos) eprintf("%d %d\n", name[i].first, name[i].second);
+//  REP (i, size) assert(U.same(nama[i*2].second, nama[i*2+1].second));
+
+    REP (i, pos) dp[pow2(i/2)][i] = 0;
+    REP (s, pow2(size)) REP (i, pos) if (s & pow2(i/2) && dp[s][i] < INF) {
+        REP (j, pos) if (~s & pow2(j/2)) {
+        assert(i != j);
+        assert(name[i].second != name[j].second);
+        double cst = dist(name[i].second, name[j].second);
+        int ns = s | pow2(j/2);
+        if (dp[ns][j^1] > dp[s][i] + cst) {
+            dp[ns][j^1] = dp[s][i] + cst;
+            pre[ns][j^1] = s * DP_MAX * 2 + i;
+        }
+        }
+    }
+
+    int SUP = pow2(size)-1;
+    int cur = 0;
+    REP (i, pos) if (dp[SUP][cur] > dp[SUP][i]) cur = i;
+
+    REP (_, size-1) {
+        int s = pre[SUP][cur] / (DP_MAX * 2);
+        int i = pre[SUP][cur] % (DP_MAX * 2);
+        int a = name[i].second;
+        int b = name[cur^1].second;
+        assert(deg[a] <= 1);
+        assert(deg[b] <= 1);
+        G[a].push_back(b);
+        G[b].push_back(a); 
+        deg[a]++; deg[b]++;
+        SUP = s;
+        cur = i;
+    }
+    }
+
+    setOrdFromGraph();
+    refineOrd();
+}
+void buildPath() {
+    ord.clear();
+    if (stop == 0) return;
+    if (stop == 1) {
+    ord.push_back(0);
+    return;
+    }
+
+    REP (i, stop) G[i].clear();
+    int cnt = 0;
+    edges.resize(stop * (stop - 1) / 2);
+    REP (j, stop) REP (i, j) {
+    edges[cnt++] = make_pair(dist(i, j), i * stop + j);
+    }
+    memset(deg, 0, sizeof (int) * stop);
+    UnionFind U(stop);
+    sort(edges.begin(), edges.end());
+    REP (i, cnt) {
+    int a = edges[i].second / stop;
+    int b = edges[i].second % stop;
+    if (deg[a] < 2 && deg[b] < 2 && !U.same(a, b)) {
+        G[a].push_back(b);
+        G[b].push_back(a);
+        deg[a]++; deg[b]++;
+        U.link(a, b);
+    }
+    }
+
+    setOrdFromGraph();
+    refineOrd();
+}
+
+int pre[MAXNN][4][4];
+bool end_points[MAXN][MAXN];
+
+void addExtend() {
+    memset(pre, -1, sizeof (int) * stop * 4 * 4);
+
+    double (*dp)[4][4] = (double (*)[4][4])dp_buf;
+    assert(sizeof dp == sizeof (void*));
+    REP (i, stop) REP (a, 4) REP (b, 4) dp[i][a][b] = INF;
+
+    int start = ord[0];
+    REP (d0, 4) REP (t, 2) {
+    int d1 = adj_d[d0][t];
+    dp[0][d0][d1] = 0;
+    pre[0][d0][d1] = -2;
+    }
+
+    int pre_r = R[start], pre_c = C[start];
+    for (int i=1; i<stop; i++) {
+    int id = ord[i];
+    int cur_r = R[id], cur_c = C[id];
+    REP (d0, 4) REP (t, 2) {
+        int d1 = adj_d[d0][t];
+        if (dp[i-1][d0][d1] == INF) continue;
+
+        int pr = pre_r + dy[d1];
+        int pc = pre_c + dx[d1];
+
+        REP (d2, 4) REP (tt, 2) {
+        int d3 = adj_d[d2][tt];
+        int cr = cur_r + dy[d2];
+        int cc = cur_c + dx[d2];
+
+        if (pr == cr && pc == cc) continue;
+
+        double cst = sqrt(sq(pr - cr) + sq(pc - cc));
+        if (dp[i][d2][d3] > dp[i-1][d0][d1] + cst) {
+            dp[i][d2][d3] = dp[i-1][d0][d1] + cst;
+            pre[i][d2][d3] = d0 * 4 + d1;
+        }
+        }
+    }
+    pre_r = cur_r;  
+    pre_c = cur_c;
+    }
+
+    {
+    int d2 = 0, d3 = 2;
+    REP (a, 4) REP (b, 4) if (dp[stop-1][a][b] < dp[stop-1][d2][d3]) {
+        d2 = a;
+        d3 = b;
+    }
+
+    static char buf[10011];
+    for (int i=stop; i--;) {
+        int id = ord[i];
+        pre_r = R[id];
+        pre_c = C[id];
+        REP (t, 2) {
+        int d = d3 ^ t;
+        int pr = pre_r + dy[d];
+        int pc = pre_c + dx[d];
+        sprintf(buf, "%d %d", pr, pc);
+        ret.push_back(buf);
+        }
+        REP (t, 2) {
+        int d = d2 ^ t ^ 1;
+        int pr = pre_r + dy[d];
+        int pc = pre_c + dx[d];
+        sprintf(buf, "%d %d", pr, pc);
+        ret.push_back(buf);
+        }
+
+
+        int nd2 = pre[i][d2][d3] / 4;
+        int nd3 = pre[i][d2][d3] % 4;
+        d2 = nd2;
+        d3 = nd3;
+    }
     }
 }
 
 struct CrossStitch {
+    vector<string> embroider(vector<string> F_) {
+    F = move(F_);
+        N = F.size();
+    ret.clear();
 
-    void push_unless_share_point(int i, int j) const {
-        if (XY[i] != XY[j] && XY[i ^ 1] != XY[j] && XY[i] != XY[j ^ 1] && XY[i ^ 1] != XY[j ^ 1])
-            INDEX_NEAR_ID[i / 2].emplace_back(id_to_index + j / 2);
-    }
+        for (char color = 'a'; color <= 'z'; ++color) {
+        findPosition(color);
+        if (stop == 0) continue;
 
-    vector<string> embroider(const vector<string>& pattern) const {
-        const double START_TIME = get_time();
-
-        int S = pattern.size();
-        int C = 0;
-        vector<int> sols[20];
-        vector<int> best_sols[20];
-        double scores[20];
-        double best_scores[20];
-        vector<int**> index_to_bad_p[20];
-        vector<int*> sol_bad_p;
-        int* SOL_GOOD_P = nullptr;
-
-        {
-            vector<int> ID_BY_COLOR[20];
-            int id = 0;
-            for (int y = 0; y <= S; ++y)
-                for (int x = 0; x <= S; ++x)
-                    DISTANCE[y][x] = sqrt(x * x + y * y);
-            for (int y = 0; y < S; ++y) {
-                for (int x = 0; x < S; ++x) {
-                    if (pattern[y][x] != '.') {
-                        int color = pattern[y][x] - 'a';
-                        C = max(C, color + 1);
-                        auto& sol = sols[color];
-                        if (sol.empty())
-                            sol.emplace_back(-1);
-                        sol.emplace_back(id);
-                        sol.emplace_back(id + 2);
-                        ID_TO_COLOR[id / 4] = color;
-                        ID_BY_COLOR[color].emplace_back(id);
-                        XY[id++] = { x, y };
-                        XY[id++] = { x + 1, y + 1 };
-                        XY[id++] = { x + 1, y };
-                        XY[id++] = { x, y + 1 };
-                    }
-                }
-            }
-            for (int color = 0; color < C; ++color) {
-                ID_TO_COLOR[id / 4 + color] = color;
-                XY[id + color * 4] = XY[id + color * 4 + 1] = { S * 2 + 1, S * 2 + 1 };
-                auto& sol = sols[color];
-                sol[0] = id + color * 4;
-                sol.emplace_back(id + color * 4);
-                double& score = scores[color];
-                score = 0;
-                for (int i = 1; i < (int)sol.size() - 1; ++i) {
-                    if (XY[sol[i - 1]] == XY[sol[i] ^ 1])
-                        sol[i] ^= 1;
-                    score += D(sol[i - 1], sol[i] ^ 1);
-                    id_to_index[sol[i] / 2] = i;
-                }
-                best_sols[color] = sol;
-                best_scores[color] = score;
-            }
-            for (int color = 0; color < C; ++color) {
-                auto ids = ID_BY_COLOR[color];
-                for (int id : ID_BY_COLOR[color]) {
-                    int size = min(S * S / C > 300 ? 9 : 15, (int)ids.size());
-                    partial_sort(ids.begin(), ids.begin() + size, ids.end(), [id](int i, int j) {
-                        return D(id, i) < D(id, j);
-                    });
-                    INDEX_NEAR_ID[id / 2].reserve(size * 2 - 1);
-                    INDEX_NEAR_ID[id / 2 + 1].reserve(size * 2 - 1);
-                    for (int i = 0; i < size; ++i) {
-                        int id2 = ids[i];
-                        push_unless_share_point(id, id2 + 2);
-                        push_unless_share_point(id + 2, id2);
-                        if (i) {
-                            push_unless_share_point(id, id2);
-                            push_unless_share_point(id + 2, id2 + 2);
-                        }
-                    }
-                }
-            }
-            sol_bad_p.reserve(id / 2 + C);
-            for (int color = 0; color < C; ++color) {
-                auto& sol = sols[color];
-                index_to_bad_p[color].assign(sol.size(), &SOL_GOOD_P);
-                for (int i = 1; i < (int)sol.size(); ++i) {
-                    if (D(sol[i - 1], sol[i] ^ 1) != 1) {
-                        sol_bad_p.emplace_back(&sol[i]);
-                        index_to_bad_p[color][i] = &sol_bad_p.back();
-                    }
-                }
-            }
-            DISTANCE[0][0] = 1e9;
+        if (N <= 40) {
+        buildPathDp();
+        } else {
+        buildPath();
         }
-
-        const double SA_START_TIME = get_time();
-        const double TIME_LIMIT = 9850 - (SA_START_TIME - START_TIME);
-        const double INITIAL_HEAT = min(2.1, S * C / 1000.0 + 0.7);
-        const double FINAL_HEAT = 0.01;
-        double heat_inv = 0;
-        double th = 0;
-        bool optimized = false;
-        for (int an = -1; ; ) {
-            if (!(++an & 0x7ff)) {
-                double p = 1 - (get_time() - SA_START_TIME) / TIME_LIMIT;
-                if (p <= 0) {
-                    break;
-                } else if (p < 0.1 && !optimized) {
-                    optimized = true;
-                    for (int color = 0; color < C; ++color) {
-                        best_scores[color] = DP::optimize(best_sols[color]);
-                        scores[color] = best_scores[color];
-                        sols[color] = best_sols[color];
-                        auto& sol = sols[color];
-                        for (int i = 1; i < (int)sol.size() - 1; ++i)
-                            id_to_index[sol[i] / 2] = i;
-                    }
-                    sol_bad_p.clear();
-                    for (int color = 0; color < C; ++color) {
-                        auto& sol = sols[color];
-                        index_to_bad_p[color].assign(sol.size(), &SOL_GOOD_P);
-                        for (int i = 1; i < (int)sol.size(); ++i) {
-                            if (D(sol[i - 1], sol[i] ^ 1) != 1) {
-                                sol_bad_p.emplace_back(&sol[i]);
-                                index_to_bad_p[color][i] = &sol_bad_p.back();
-                            }
-                        }
-                    }
-                }
-                heat_inv = 1 / (FINAL_HEAT + (INITIAL_HEAT - FINAL_HEAT) * p);
-                th = 9 / heat_inv;
-            }
-            unsigned r = rando();
-            auto sol_p = sol_bad_p[(r >> 16) % sol_bad_p.size()];
-            int color = ID_TO_COLOR[*sol_p / 4];
-            auto& sol = sols[color];
-            int i = sol_p - &sol[0];
-            int j = i == 1 || i != sol.size() - 1 && r >> 15 & 1
-                ? *INDEX_NEAR_ID[sol_p[0] / 2][(r & 0x7fff) % INDEX_NEAR_ID[sol_p[0] / 2].size()]
-                : *INDEX_NEAR_ID[sol_p[-1] / 2][(r & 0x7fff) % INDEX_NEAR_ID[sol_p[-1] / 2].size()] + 1;
-            double diff = - D(sol[i - 1], sol[i] ^ 1) + D(sol[i - 1], sol[j - 1])
-                - D(sol[j - 1], sol[j] ^ 1) + D(sol[j] ^ 1, sol[i] ^ 1);
-            if (diff < th && rando() / 4294967296.0 < exp(-diff * heat_inv)) {
-                if (i > j)
-                    swap(i, j);
-                int i2 = i;
-                int j2 = j;
-                int*** bad_pp = &index_to_bad_p[color][0];
-                for (--j; i < j; ) {
-                    id_to_index[sol[j] / 2] = i;
-                    id_to_index[sol[i] / 2] = j;
-                    sol[i] ^= 1;
-                    sol[j] ^= 1;
-                    swap(sol[i], sol[j]);
-                    ++i;
-                    *bad_pp[i] = &sol[j];
-                    *bad_pp[j] = &sol[i];
-                    swap(bad_pp[i], bad_pp[j]);
-                    --j;
-                }
-                if (i == j)
-                    sol[i] ^= 1;
-                for (int i : { i2, j2 }) {
-                    if ((bad_pp[i] != &SOL_GOOD_P) != (D(sol[i - 1], sol[i] ^ 1) != 1)) {
-                        if (bad_pp[i] != &SOL_GOOD_P) {
-                            *bad_pp[i] = sol_bad_p.back();
-                            int c = ID_TO_COLOR[*sol_bad_p.back() / 4];
-                            index_to_bad_p[c][sol_bad_p.back() - &sols[c][0]] = bad_pp[i];
-                            bad_pp[i] = &SOL_GOOD_P;
-                            sol_bad_p.pop_back();
-                        } else {
-                            sol_bad_p.emplace_back(&sol[i]);
-                            bad_pp[i] = &sol_bad_p.back();
-                        }
-                    }
-                }
-                double& score = scores[color];
-                score += diff;
-                if (best_scores[color] > score) {
-                    best_scores[color] = score;
-                    best_sols[color] = sol;
-                }
-            }
-        }
-
-        vector<string> ret;
-        for (int color = 0; color < C; ++color) {
-            ret.emplace_back(1, 'a' + color);
-            auto& sol = best_sols[color];
-            DP::optimize(sol);
-            for (int i = 1; i < (int)sol.size() - 1; ++i) {
-                auto& p1 = XY[sol[i] ^ 1];
-                auto& p2 = XY[sol[i]];
-                ret.emplace_back(to_string(p1.second) + " " + to_string(p1.first));
-                ret.emplace_back(to_string(p2.second) + " " + to_string(p2.first));
-            }
+        addExtend();
         }
         return ret;
     }
